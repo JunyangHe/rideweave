@@ -44,7 +44,7 @@ h3 { overflow: hidden; margin: 0 0 2px; font-size: 1rem; text-overflow: ellipsis
 .privacy-card > span { display: grid; width: 34px; height: 34px; place-items: center; border-radius: 50%; background: var(--mint); color: var(--forest); }
 .privacy-card p { margin: 3px 0 0; color: var(--muted); font-size: .88rem; }
 
-.panel { margin-bottom: 18px; padding: clamp(22px, 4vw, 38px); border: 1px solid rgba(130, 147, 136, .34); border-radius: 24px; background: rgba(255,255,255,.75); box-shadow: 0 18px 50px rgba(34, 56, 48, .055); backdrop-filter: blur(10px); }
+.panel { margin-bottom: 18px; padding: clamp(22px, 4vw, 38px); border: 1px solid rgba(130, 147, 136, .34); border-radius: 24px; background: #fff; box-shadow: 0 18px 50px rgba(34, 56, 48, .055); }
 .section-heading { display: flex; align-items: flex-start; gap: 16px; margin-bottom: 24px; }
 .section-heading > span { display: grid; flex: 0 0 36px; height: 36px; place-items: center; border-radius: 11px; background: var(--forest); color: white; font-weight: 700; }
 .section-heading p, .merge-panel p { margin: 0; color: var(--muted); }
