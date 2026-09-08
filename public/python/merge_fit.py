@@ -1,11 +1,11 @@
 #!/usr/bin/env python3
 """
-Merge sensor streams into a Blackbird-derived FIT activity.
+Merge sensor streams into a main FIT activity.
 
 Designed for this workflow:
-  --base  strava_blackbird.fit   authoritative GPS/speed/distance/activity
-  --hr    strava.fit             authoritative Apple Watch heart rate
-  --power RS7.fit                OPTIONAL future power/cadence donor
+  --base  main.fit        authoritative GPS/speed/distance/activity
+  --hr    heart-rate.fit  authoritative heart-rate donor
+  --power power.fit       optional power/cadence donor
 
 No third-party Python packages are required.
 
@@ -16,13 +16,12 @@ Important design choices:
   start times because independently-started recordings may begin at different times
   while still sharing the same clock.
 - Missing donor samples are written as FIT invalid values rather than invented.
-- Heart rate is copied from the nearest real Apple Watch sample within a configurable
-  tolerance (default 5 s). This works well for Apple Watch's irregular ~5 s sampling.
+- Heart rate is copied from the nearest real donor sample within a configurable
+  tolerance (default 5 s), allowing for irregular sampling intervals.
 - Power uses a tighter default tolerance (1 s).
 
 This implementation supports normal FIT data records and compressed-timestamp donor
-records. The base file must use normal (non-compressed) Record messages; that is true
-for the tested Blackbird-derived file supplied by the user.
+records. The base file must use normal (non-compressed) Record messages.
 """
 
 from __future__ import annotations
@@ -766,16 +765,16 @@ def merge_web(config_json: str) -> str:
 
 
 def main():
-    parser = argparse.ArgumentParser(description="Merge Apple Watch HR and optional RS7 power into a Blackbird FIT")
-    parser.add_argument("--base", required=True, type=Path, help="Blackbird-derived Strava FIT (master activity)")
-    parser.add_argument("--hr", required=True, type=Path, help="Native Strava/Apple Watch FIT (HR donor)")
-    parser.add_argument("--power", type=Path, default=None, help="Optional future RS7 FIT power donor")
+    parser = argparse.ArgumentParser(description="Merge sensor streams into a main FIT activity")
+    parser.add_argument("--base", required=True, type=Path, help="Main FIT activity")
+    parser.add_argument("--hr", required=True, type=Path, help="Heart-rate donor FIT")
+    parser.add_argument("--power", type=Path, default=None, help="Optional power donor FIT")
     parser.add_argument("--output", type=Path, default=Path("merged.fit"))
     parser.add_argument("--hr-tolerance", type=float, default=5.0, help="Nearest HR sample tolerance in seconds (default 5)")
     parser.add_argument("--power-tolerance", type=float, default=1.0, help="Nearest power/cadence tolerance in seconds (default 1)")
     parser.add_argument("--hr-offset", type=int, default=0, help="Manual HR donor timestamp offset in seconds (default 0)")
-    parser.add_argument("--power-offset", type=int, default=0, help="Manual RS7 timestamp offset in seconds (default 0)")
-    parser.add_argument("--rs7-cadence", action="store_true", help="Also copy cadence from RS7 when available")
+    parser.add_argument("--power-offset", type=int, default=0, help="Manual power timestamp offset in seconds (default 0)")
+    parser.add_argument("--power-cadence", action="store_true", help="Also copy cadence from the power donor when available")
     args = parser.parse_args()
 
     stats = merge(
@@ -787,7 +786,7 @@ def main():
         power_tolerance=args.power_tolerance,
         hr_offset=args.hr_offset,
         power_offset=args.power_offset,
-        use_power_cadence=args.rs7_cadence,
+        use_power_cadence=args.power_cadence,
     )
 
     print(f"Output: {args.output}")
@@ -800,7 +799,7 @@ def main():
         print(f"Power source samples:  {stats['power_source_samples']}")
         print(f"Power matched records: {stats['power_matched_records']} / {stats['base_records']}")
         print(f"Power samples output:  {stats['power_output_samples']}")
-        if args.rs7_cadence:
+        if args.power_cadence:
             print(f"Cadence matched:       {stats['cadence_matched_records']}")
     print(f"Output size:            {stats['output_bytes']:,} bytes")
     print("Validation:             PASS (FIT structure + header CRC + file CRC)")
