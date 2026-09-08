@@ -1,114 +1,81 @@
-# RideWeave
+# 🚴 RideWeave
 
-**Merge the best data from every cycling sensor into one complete FIT activity.**
+**One ride. Every sensor. One FIT file.**
 
-RideWeave is a free, open-source, browser-only FIT merger for cyclists who record the same ride with multiple devices. It keeps one recording as the main activity, adds selected sensor fields from the others, and downloads a single validated FIT file that can be uploaded to Strava.
+🌐 **[Try RideWeave in your browser](https://junyanghe.github.io/rideweave/)**
 
-No expensive replacement bike computer is required. No ride files are uploaded to RideWeave. Everything is processed locally in the browser.
+RideWeave is a free, open-source FIT merger for cyclists. Choose one recording as your main ride, add selected sensor data from up to three other recordings, and download one validated FIT file ready to upload to Strava.
 
-## Why this project exists
+Everything happens locally in your browser. Your ride files are never uploaded to a server.
 
-RideWeave began with a frustratingly common cycling setup.
+## The problem
 
-One bike computer recorded excellent GPS, speed, distance, elevation, laps, and pause events. An Apple Watch captured the rider's heart rate. A power meter recorded the watts being produced at the pedals. Each device was useful, but none of them was able to bring every sensor into the same activity.
+You finish one ride, but your data is split across several recordings:
 
-At the start of a ride, the rider could start the Blackbird BB16, record with Strava for Apple Watch heart rate, and use the X-LAB app for RS7 power. At the end, however, the result was not one rich ride. It was several incomplete versions of the same ride:
+- one has the best route, speed, distance, laps, and pauses;
+- another has heart rate;
+- another may have power or cadence.
 
-```text
-Blackbird BB16 recording
-  → best GPS, speed, distance, and ride structure
+Some sensors do not sync with Strava. Others do sync, but arrive as separate activities. Instead of one complete ride, you get several partial copies.
 
-Strava + Apple Watch recording
-  → heart rate, but a separate Strava activity
+RideWeave brings those recordings together without requiring a new, expensive bike computer.
 
-X-LAB RS7 recording
-  → power data in another device or app
+```mermaid
+flowchart LR
+    A["Main FIT<br/>route · laps · timing"] --> D["🧵 RideWeave"]
+    B["Donor FIT<br/>heart rate"] --> D
+    C["Donor FIT<br/>power · cadence"] --> D
+    D --> E["One validated FIT<br/>ready to upload"]
 ```
 
-Some sensors do not integrate with Strava at all. Others can sync to Strava, but every recording arrives as a separate activity. Strava does not combine those overlapping activities into one record, so the rider must either accept missing data, keep duplicates, or replace otherwise useful hardware with an expensive cycling computer that supports every sensor.
+## How it works
 
-RideWeave offers another path:
+1. Add **2–4 FIT files** from the same ride.
+2. Choose exactly one as the **main activity**.
+3. Pick one authoritative source for each field you want to add.
+4. Review timestamp alignment and coverage.
+5. Merge and download the finished FIT file.
 
-```text
-Main FIT activity  ──────────────┐
-                                 │
-Heart-rate FIT ── heart rate ────┼──→ one merged, validated FIT
-                                 │
-Power FIT ─────── power/cadence ─┘
-```
+The main activity remains the foundation. RideWeave preserves its timeline, route, laps, pauses, events, and activity structure by default. Donor recordings contribute only the fields you select.
 
-The rider chooses the recording with the best overall activity data as the base. RideWeave preserves its timeline, GPS track, laps, pauses, events, and metadata, then weaves in heart rate, power, or cadence from other recordings using their real timestamps.
+Recordings are matched using their real FIT timestamps. RideWeave does not shift start times, average conflicting sensors, or silently replace base fields.
 
-The result is one activity containing the best available data from the hardware the rider already owns.
+## 🔒 Private by design
 
-## What RideWeave does
+FIT files can reveal where you live, when you ride, and detailed health or performance data. RideWeave therefore runs entirely on your device:
 
-1. Accepts two to four FIT files recorded during the same ride.
-2. Validates each file's FIT structure and CRC.
-3. Requires one file to be selected as the main activity.
-4. Detects the record fields available in every input.
-5. Recommends sources for missing heart rate, power, and cadence.
-6. Shows how much of the main activity can be matched to each donor stream.
-7. Merges selected fields using absolute FIT timestamps.
-8. Revalidates the generated FIT before making it available to download.
+- no file uploads;
+- no backend or database;
+- no account;
+- no saved ride history.
 
-The main activity remains authoritative for:
+The website serves static application files. Parsing and merging run in a Web Worker inside your browser, and the result is checked for valid FIT structure and CRC before download.
 
-- timestamps and master timeline;
-- GPS position;
-- speed, distance, and elevation;
-- laps and pause/resume events;
-- activity/session structure and device metadata.
+## What the POC supports
 
-Other files act as sensor donors. Each included field has exactly one authoritative source—RideWeave never averages conflicting devices or shifts recordings merely to make their start times match.
+- Two to four FIT files from one cycling activity.
+- Required main-activity selection.
+- Heart-rate, power, and cadence donors.
+- Field discovery and recommended source mapping.
+- Field-specific timestamp tolerances.
+- Alignment and coverage preview.
+- FIT structure and CRC validation.
+- Browser-only processing with no environment variables or server code.
 
-## Private by design
+Donor data must come from a source that can export a compatible FIT file. RideWeave does not connect directly to recording services or recover data from platforms that do not provide an export.
 
-FIT files can reveal precise routes, home or work locations, ride times, heart rate, power, and device identifiers. RideWeave therefore has a strict architectural rule:
-
-> **Your FIT files never leave your device.**
-
-The Vercel deployment serves only static application files. FIT parsing and merging run inside a Pyodide Web Worker in the browser. There is no upload endpoint, backend, database, user account, analytics service, or cloud ride history. Refreshing or closing the page clears the working data.
-
-## Current POC capabilities
-
-- Drag-and-drop or file-picker input for two to four `.fit` files.
-- Required main/base activity selection.
-- Record count, time range, field discovery, and CRC checks.
-- Independent heart-rate, power, and cadence donor selection.
-- Field-specific nearest-sample tolerances.
-- Coverage preview based on absolute timestamps.
-- Background processing in a Web Worker so the interface remains responsive.
-- Structure and CRC validation before download.
-- Static deployment on Vercel with no environment variables.
-
-## Current limitations
-
-- Donor overrides are currently limited to heart rate, power, and cadence.
-- The main activity must use normal Record messages; compressed-timestamp donor records are supported, but compressed Record messages in the base are not rewritten yet.
-- RideWeave does not connect directly to Strava, Blackbird, Apple Health, or X-LAB. Users must obtain local FIT exports from their recording sources.
-- If a device or app does not provide a FIT export, RideWeave cannot recover that sensor stream until an export becomes available.
-- The POC does not recalculate every device-specific training metric or proprietary developer field.
-
-See [IMPLEMENTATION_PLAN.md](./IMPLEMENTATION_PLAN.md) for the complete merge rules, architecture, security model, test strategy, Vercel setup, milestones, and acceptance criteria.
+RideWeave is an early proof of concept. Keep your original files and verify the merged activity before deleting or replacing anything.
 
 ## Local development
 
-Prerequisites:
-
-- Node.js 20.19+ or 22.12+
-- npm
-- Git
-- A current browser with WebAssembly and module Web Worker support
-
-Install and run:
+You need Node.js 20.19+ or 22.12+, npm, Git, and a current browser.
 
 ```bash
 npm install
 npm run dev
 ```
 
-Quality checks:
+Run the complete quality check with:
 
 ```bash
 npm run typecheck
@@ -117,37 +84,18 @@ npm test
 npm run build
 ```
 
-The first FIT inspection loads a pinned Pyodide runtime from jsDelivr. FIT bytes remain in Pyodide's temporary in-memory filesystem and are never included in that network request.
+Never commit personal ride files. Private developer samples belong under `tests/private/`, which is ignored by Git. Public test fixtures must be synthetic or explicitly licensed for redistribution.
 
-## Test-file policy
+## Deployment
 
-Never commit personal ride files. Developer-only samples belong under `tests/private/`, which is ignored by Git. CI fixtures must be synthetic or have explicit redistribution permission, with their source and license documented.
+GitHub Actions checks every push to `main` and automatically publishes the latest successful build to [RideWeave on GitUb Pages](https://junyanghe.github.io/rideweave/).
 
-## Deploying on GitHub Pages
+The same static project can also be hosted on Vercel with `npm run build`, the `dist` output directory, and no environment variables.
 
-The included `Deploy to GitHub Pages` workflow builds and publishes `dist` after every push to `main`. In the repository, open **Settings → Pages**, choose **GitHub Actions** as the source, and use:
+## Contributing
 
-`https://junyanghe.github.io/rideweave/`
-
-Vite applies the `/rideweave/` base path only inside GitHub Actions, so local development and Vercel continue to run from `/`.
-
-## Deploying on Vercel
-
-Import the `rideweave` GitHub repository as a Vite project with these settings:
-
-- Install command: `npm ci`
-- Build command: `npm run build`
-- Output directory: `dist`
-- Environment variables: none
-
-Git integration creates preview deployments for branches and pull requests, then deploys `main` to production.
-
-## Project status
-
-RideWeave is an early proof of concept. Verify a downloaded activity before replacing or deleting any original Strava activity. Contributions, device samples that are safe to redistribute, FIT interoperability testing, and accessibility feedback are welcome.
-
-RideWeave is not affiliated with or endorsed by Strava, Apple, Blackbird, X-LAB, or Garmin.
+Bug reports, interoperability testing, synthetic fixtures, and accessibility improvements are welcome. Please do not attach personal FIT files to public issues.
 
 ## License
 
-MIT. The FIT protocol and third-party runtime assets remain subject to their respective terms.
+[MIT](./LICENSE). The FIT protocol and third-party runtime assets remain subject to their respective terms.
