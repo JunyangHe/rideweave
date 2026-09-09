@@ -45,7 +45,16 @@ async function getRuntime() {
       const engineUrl = new URL(`${import.meta.env.BASE_URL}python/merge_fit.py`, self.location.origin)
       const response = await fetch(engineUrl, { cache: 'force-cache' })
       if (!response.ok) throw new Error('Could not load the local FIT merge engine.')
-      await runtime.runPythonAsync(await response.text())
+      const engineSource = await response.text()
+      await runtime.runPythonAsync(`
+_rideweave_previous_name = globals().get("__name__", "__main__")
+globals()["__name__"] = "rideweave_engine"
+try:
+    exec(compile(${JSON.stringify(engineSource)}, "merge_fit.py", "exec"), globals())
+finally:
+    globals()["__name__"] = _rideweave_previous_name
+    del _rideweave_previous_name
+`)
       return runtime
     })()
   }
