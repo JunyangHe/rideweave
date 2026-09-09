@@ -47,13 +47,16 @@ async function getRuntime() {
       if (!response.ok) throw new Error('Could not load the local FIT merge engine.')
       const engineSource = await response.text()
       await runtime.runPythonAsync(`
-_rideweave_previous_name = globals().get("__name__", "__main__")
-globals()["__name__"] = "rideweave_engine"
-try:
-    exec(compile(${JSON.stringify(engineSource)}, "merge_fit.py", "exec"), globals())
-finally:
-    globals()["__name__"] = _rideweave_previous_name
-    del _rideweave_previous_name
+import sys
+import types
+_rideweave_module = types.ModuleType("rideweave_engine")
+sys.modules[_rideweave_module.__name__] = _rideweave_module
+exec(compile(${JSON.stringify(engineSource)}, "merge_fit.py", "exec"), _rideweave_module.__dict__)
+json = _rideweave_module.json
+Path = _rideweave_module.Path
+inspect_fit = _rideweave_module.inspect_fit
+preview_web = _rideweave_module.preview_web
+merge_web = _rideweave_module.merge_web
 `)
       return runtime
     })()
