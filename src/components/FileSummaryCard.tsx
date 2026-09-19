@@ -49,7 +49,7 @@ export function FileSummaryCard({
             <p className="muted">{formatBytes(item.file.size)}</p>
           </div>
         </div>
-        <button className="text-button" type="button" onClick={onRemove} aria-label={`Remove ${item.file.name}`}>
+        <button className="remove-button" type="button" onClick={onRemove} aria-label={`Remove ${item.file.name}`}>
           Remove
         </button>
       </div>

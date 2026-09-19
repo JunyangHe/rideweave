@@ -34,7 +34,7 @@ flowchart LR
 2. Choose exactly one as the **main activity**.
 3. Pick one authoritative source for each field you want to add.
 4. Review timestamp alignment and coverage.
-5. Merge and download the finished FIT file.
+5. Merge; the validated FIT file downloads automatically.
 
 The main activity remains the foundation. RideWeave preserves its timeline, route, laps, pauses, events, and activity structure by default. Donor recordings contribute only the fields you select.
 

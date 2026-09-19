@@ -12,9 +12,9 @@ import type {
   DonorFieldName,
   FieldMapping,
   MergePreview,
-  MergeResult,
   SelectedFitFile,
 } from './fit/types'
+import { downloadFit } from './fit/download'
 import {
   inspectFiles,
   mergeFiles,
@@ -26,11 +26,6 @@ const EMPTY_MAPPING: FieldMapping = {
   heart_rate: null,
   power: null,
   cadence: null,
-}
-
-interface DownloadState extends MergeResult {
-  url: string
-  fileName: string
 }
 
 function friendlyError(error: unknown) {
@@ -49,14 +44,11 @@ export default function App() {
   const [baseId, setBaseId] = useState<string | null>(null)
   const [mapping, setMapping] = useState<FieldMapping>(EMPTY_MAPPING)
   const [preview, setPreview] = useState<MergePreview | null>(null)
-  const [download, setDownload] = useState<DownloadState | null>(null)
+  const [downloadStarted, setDownloadStarted] = useState(false)
   const [busy, setBusy] = useState<'idle' | 'inspecting' | 'previewing' | 'merging'>('idle')
   const [error, setError] = useState<string | null>(null)
 
-  useEffect(() => () => {
-    if (download) URL.revokeObjectURL(download.url)
-    terminateFitWorker()
-  }, [download])
+  useEffect(() => () => terminateFitWorker(), [])
 
   const readyFiles = files.filter((item) => item.status === 'ready')
   const recommendedBase = useMemo(() => recommendBaseId(files), [files])
@@ -69,10 +61,7 @@ export default function App() {
 
   function clearResult() {
     setPreview(null)
-    setDownload((current) => {
-      if (current) URL.revokeObjectURL(current.url)
-      return null
-    })
+    setDownloadStarted(false)
   }
 
   async function addFiles(incoming: File[]) {
@@ -168,18 +157,11 @@ export default function App() {
     if (!baseId || !selectedBase || !canMerge) return
     setBusy('merging')
     setError(null)
-    setDownload((current) => {
-      if (current) URL.revokeObjectURL(current.url)
-      return null
-    })
+    setDownloadStarted(false)
     try {
       const result = await mergeFiles(files, baseId, mapping)
-      const blob = new Blob([result.bytes], { type: 'application/octet-stream' })
-      setDownload({
-        ...result,
-        url: URL.createObjectURL(blob),
-        fileName: mergedName(selectedBase.file.name),
-      })
+      downloadFit(result.bytes, mergedName(selectedBase.file.name))
+      setDownloadStarted(true)
     } catch (mergeError) {
       setError(friendlyError(mergeError))
     } finally {
@@ -241,20 +223,18 @@ export default function App() {
       </section>
 
       <section className="merge-panel" aria-labelledby="merge-heading">
-        <div><p className="eyebrow">Final step</p><h2 id="merge-heading">Build your merged FIT</h2><p>The result is reparsed and its header and file CRC are verified before download.</p></div>
+        <div>
+          <p className="eyebrow">Final step</p>
+          <h2 id="merge-heading">Build your merged FIT</h2>
+          <p>The result is reparsed and its header and file CRC are verified before automatic download.</p>
+          {downloadStarted ? <p className="download-status" role="status">Download requested. Check your browser’s downloads.</p> : null}
+        </div>
         <button className="button button--primary" type="button" disabled={!canMerge} onClick={runMerge}>
           {busy === 'merging' ? 'Merging and validating…' : 'Merge FIT files'}
         </button>
       </section>
 
       {error ? <div className="error-banner" role="alert"><strong>Couldn’t continue</strong><p>{error}</p></div> : null}
-      {download ? (
-        <section className="success-panel" aria-live="polite">
-          <div><p className="eyebrow">Validation passed</p><h2>Your merged activity is ready</h2><p>{download.stats.baseRecords.toLocaleString()} base records · {(download.stats.outputBytes / 1024).toFixed(1)} KB</p></div>
-          <a className="button button--primary" href={download.url} download={download.fileName}>Download {download.fileName}</a>
-        </section>
-      ) : null}
-
       <footer>RideWeave v0.1 POC · Local processing only</footer>
     </main>
   )
