@@ -9,7 +9,8 @@
     "build": "tsc -b && vite build",
     "lint": "eslint .",
     "preview": "vite preview",
-    "test": "vitest run",
+    "test": "npm run test:python && vitest run",
+    "test:python": "python3 -m unittest discover -s tests -p 'test_*.py'",
     "typecheck": "tsc -b --pretty false"
   },
   "dependencies": {

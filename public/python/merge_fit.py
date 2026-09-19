@@ -548,6 +548,27 @@ def encode_definition(defn: Definition, add_fields: Sequence[FieldDef]) -> bytes
     return bytes(out)
 
 
+def _expanded_fields(defn: Definition, target_fields: Sequence[FieldDef]) -> List[FieldDef]:
+    """Return the exact native-field layout used for an output definition."""
+    existing = {field.number for field in defn.fields}
+    return list(defn.fields) + [
+        field for field in target_fields if field.number not in existing
+    ]
+
+
+def _validate_target_layout(defn: Definition, target_fields: Sequence[FieldDef]) -> None:
+    """Reject an existing target field that cannot be safely rewritten in place."""
+    targets = {field.number: field for field in target_fields}
+    for field in defn.fields:
+        target = targets.get(field.number)
+        if target and (field.size, field.base_type) != (target.size, target.base_type):
+            name = FIELD_NAMES.get(field.number, f"field_{field.number}")
+            raise ValueError(
+                f"The main activity uses an unsupported layout for {name} "
+                f"(size {field.size}, base type 0x{field.base_type:02x})"
+            )
+
+
 def _field_bytes(value: Optional[int], field: FieldDef, endian: str) -> bytes:
     if field.number in (FIELD_HEART_RATE, FIELD_CADENCE):
         v = INVALID_UINT8 if value is None else max(0, min(254, int(value)))
@@ -597,6 +618,97 @@ def rewrite_record_data(
     return bytes([raw[0]]) + bytes(out_payload)
 
 
+def _record_payload_parts(chunk: ParsedChunk) -> Tuple[List[bytes], bytes]:
+    """Split a normal Record message into native and developer field bytes."""
+    if chunk.kind != "data":
+        raise ValueError("Expected a normal Record data message")
+    payload = chunk.raw[1:]
+    pos = 0
+    native = []
+    for field in chunk.definition.fields:
+        native.append(payload[pos:pos + field.size])
+        pos += field.size
+    dev_size = sum(field.size for field in chunk.definition.dev_fields)
+    return native, payload[pos:pos + dev_size]
+
+
+def verify_base_preservation(
+    base_blob: bytes,
+    base_header_size: int,
+    base_chunks: Sequence[ParsedChunk],
+    output_blob: bytes,
+    output_header_size: int,
+    output_chunks: Sequence[ParsedChunk],
+    target_fields: Sequence[FieldDef],
+) -> None:
+    """Verify that only selected Record fields and required FIT framing changed."""
+    if output_header_size != base_header_size:
+        raise ValueError("Output validation failed: FIT header size changed")
+
+    # Data size and CRCs must change when fields are added. Every other header byte
+    # remains owned by the main activity.
+    ignored_header_bytes = set(range(4, 8))
+    if base_header_size >= 14:
+        ignored_header_bytes.update((12, 13))
+    for index in range(base_header_size):
+        if index not in ignored_header_bytes and output_blob[index] != base_blob[index]:
+            raise ValueError(
+                f"Output validation failed: main FIT header byte {index} changed"
+            )
+
+    if len(output_chunks) != len(base_chunks):
+        raise ValueError("Output validation failed: main message count changed")
+
+    target_numbers = {field.number for field in target_fields}
+    for index, (base_chunk, output_chunk) in enumerate(zip(base_chunks, output_chunks)):
+        if (
+            base_chunk.kind != output_chunk.kind
+            or base_chunk.local_num != output_chunk.local_num
+            or base_chunk.definition.global_num != output_chunk.definition.global_num
+        ):
+            raise ValueError(
+                f"Output validation failed: main message {index} changed identity"
+            )
+
+        if base_chunk.definition.global_num != RECORD_MSG_NUM:
+            if output_chunk.raw != base_chunk.raw:
+                raise ValueError(
+                    f"Output validation failed: non-Record main message {index} changed"
+                )
+            continue
+
+        if base_chunk.kind == "definition":
+            expected_fields = _expanded_fields(base_chunk.definition, target_fields)
+            if (
+                output_chunk.definition.fields != expected_fields
+                or output_chunk.definition.dev_fields != base_chunk.definition.dev_fields
+                or output_chunk.definition.architecture != base_chunk.definition.architecture
+                or output_chunk.definition.reserved != base_chunk.definition.reserved
+                or output_chunk.definition.header_byte != base_chunk.definition.header_byte
+            ):
+                raise ValueError(
+                    f"Output validation failed: Record definition {index} changed unexpectedly"
+                )
+            continue
+
+        base_native, base_dev = _record_payload_parts(base_chunk)
+        output_native, output_dev = _record_payload_parts(output_chunk)
+        if len(output_native) != len(_expanded_fields(base_chunk.definition, target_fields)):
+            raise ValueError(
+                f"Output validation failed: Record message {index} has the wrong field count"
+            )
+        for field_index, field in enumerate(base_chunk.definition.fields):
+            if field.number not in target_numbers and output_native[field_index] != base_native[field_index]:
+                name = FIELD_NAMES.get(field.number, f"field_{field.number}")
+                raise ValueError(
+                    f"Output validation failed: main {name} bytes changed in Record message {index}"
+                )
+        if output_dev != base_dev:
+            raise ValueError(
+                f"Output validation failed: main developer data changed in Record message {index}"
+            )
+
+
 def merge_selected(
     base_path: Path,
     output_path: Path,
@@ -627,6 +739,10 @@ def merge_selected(
         tolerances[name] = tolerance
         target_fields.append(FieldDef(field_number, size, base_type))
 
+    for chunk in base_chunks:
+        if chunk.kind == "definition" and chunk.definition.global_num == RECORD_MSG_NUM:
+            _validate_target_layout(chunk.definition, target_fields)
+
     output_data = bytearray()
     base_record_count = 0
     matched = {name: 0 for name in selections}
@@ -651,7 +767,14 @@ def merge_selected(
 
         timestamp = chunk.timestamp
         if timestamp is None:
-            output_data += chunk.raw
+            # Its definition was expanded, so its payload must be expanded as well.
+            # With no timestamp there is no defensible donor match; selected fields
+            # receive FIT invalid values while every original main-file byte remains.
+            injected = {
+                DONATABLE_FIELDS[name][0]: None
+                for name in streams
+            }
+            output_data += rewrite_record_data(chunk, injected, target_fields)
             continue
 
         base_record_count += 1
@@ -677,7 +800,16 @@ def merge_selected(
     output_blob = body + struct.pack("<H", fit_crc(body))
     output_path.write_bytes(output_blob)
 
-    _, _, _, verified_chunks = parse_fit(output_path)
+    verified_blob, verified_header_size, _, verified_chunks = parse_fit(output_path)
+    verify_base_preservation(
+        base_blob,
+        header_size,
+        base_chunks,
+        verified_blob,
+        verified_header_size,
+        verified_chunks,
+        target_fields,
+    )
     field_stats: Dict[str, object] = {}
     for name, stream in streams.items():
         field_number = DONATABLE_FIELDS[name][0]
